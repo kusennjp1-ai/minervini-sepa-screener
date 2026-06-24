@@ -14,7 +14,10 @@ st.set_page_config(page_title="SEPA Screener", page_icon="📈", layout="wide")
 @st.cache_data(ttl=3600)
 def download_data(ticker, period='2y'):
     try:
-        return yf.download(ticker, period=period, progress=False)
+        df = yf.download(ticker, period=period, progress=False)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        return df
     except:
         return pd.DataFrame()
 
@@ -40,6 +43,10 @@ def evaluate_market_360():
     try:
         sp500 = yf.download('^GSPC', period='1y', progress=False)
         vix = yf.download('^VIX', period='1mo', progress=False)
+        if isinstance(sp500.columns, pd.MultiIndex):
+            sp500.columns = sp500.columns.get_level_values(0)
+        if isinstance(vix.columns, pd.MultiIndex):
+            vix.columns = vix.columns.get_level_values(0)
         if sp500.empty: return 'UPTREND_UNDER_PRESSURE', 55, {}
         details, score = {}, 0
         sp500['SMA50'] = sp500['Close'].rolling(50).mean()
