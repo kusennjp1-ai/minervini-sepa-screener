@@ -1,6 +1,7 @@
 """
 Mark Minervini SEPA Screener — Professional Trading Dashboard
 一流デザイナー版: Glassmorphism UI + Market 360 Gauge + VCP Sparklines
+全米国株対応 (ETF除外) | データソース: Yahoo Finance & GitHub US Stock List
 """
 import streamlit as st
 import pandas as pd
@@ -9,6 +10,7 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
+import requests
 
 # ==================== ページ設定 ====================
 st.set_page_config(
@@ -26,7 +28,6 @@ st.markdown("""
     * { font-family: 'Inter', sans-serif; }
     .stApp { background: #0A0B0F; }
 
-    /* ガラスモーフィズムカード */
     .glass-card {
         background: rgba(20, 22, 30, 0.8);
         backdrop-filter: blur(16px);
@@ -37,12 +38,6 @@ st.markdown("""
         box-shadow: 0 8px 32px rgba(0,0,0,0.4);
         transition: all 0.3s ease;
     }
-    .glass-card:hover {
-        border-color: rgba(255,255,255,0.12);
-        box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-    }
-
-    /* Market 360 ゲージ */
     .gauge-container {
         position: relative;
         width: 200px;
@@ -60,10 +55,8 @@ st.markdown("""
     }
     .gauge-needle {
         position: absolute;
-        bottom: 0;
-        left: 50%;
-        width: 3px;
-        height: 45px;
+        bottom: 0; left: 50%;
+        width: 3px; height: 45px;
         background: white;
         transform-origin: bottom center;
         border-radius: 2px;
@@ -72,87 +65,55 @@ st.markdown("""
     }
     .gauge-score {
         position: absolute;
-        bottom: -8px;
-        left: 50%;
+        bottom: -8px; left: 50%;
         transform: translateX(-50%);
         font-family: 'JetBrains Mono', monospace;
-        font-size: 2rem;
-        font-weight: 700;
-        color: white;
-        text-shadow: 0 0 20px rgba(255,255,255,0.3);
+        font-size: 2rem; font-weight: 700; color: white;
     }
-
-    /* 銘柄カード */
     .ticker-badge {
         display: inline-block;
         padding: 0.3rem 0.8rem;
         background: rgba(255,255,255,0.05);
         border-radius: 8px;
-        font-weight: 600;
-        letter-spacing: 0.5px;
-        font-size: 1.1rem;
+        font-weight: 600; letter-spacing: 0.5px; font-size: 1.1rem;
     }
     .vcp-meter {
-        height: 4px;
-        background: rgba(255,255,255,0.08);
-        border-radius: 2px;
-        overflow: hidden;
-        margin: 0.5rem 0;
+        height: 4px; background: rgba(255,255,255,0.08);
+        border-radius: 2px; overflow: hidden; margin: 0.5rem 0;
     }
     .vcp-fill {
-        height: 100%;
-        border-radius: 2px;
+        height: 100%; border-radius: 2px;
         transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .metric-pill {
-        display: inline-block;
-        padding: 0.2rem 0.6rem;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        font-weight: 500;
-        letter-spacing: 0.3px;
+        display: inline-block; padding: 0.2rem 0.6rem;
+        border-radius: 12px; font-size: 0.75rem; font-weight: 500;
     }
     .pill-success { background: rgba(0,200,83,0.12); color: #00E676; }
     .pill-warning { background: rgba(255,214,0,0.12); color: #FFD600; }
     .pill-danger { background: rgba(255,23,68,0.12); color: #FF1744; }
     .pill-neutral { background: rgba(255,255,255,0.06); color: #8892A4; }
 
-    /* サイドバー */
     [data-testid="stSidebar"] {
         background: rgba(10,11,15,0.95);
         border-right: 1px solid rgba(255,255,255,0.04);
-        backdrop-filter: blur(20px);
     }
-
-    /* ボタン */
     .stButton > button {
         background: linear-gradient(135deg, #1A1F2E, #252B3D) !important;
         border: 1px solid rgba(255,255,255,0.08) !important;
-        border-radius: 10px !important;
-        color: #E0E0E0 !important;
-        font-weight: 500 !important;
-        letter-spacing: 0.3px !important;
-        transition: all 0.3s ease !important;
-        padding: 0.6rem 1.2rem !important;
+        border-radius: 10px !important; color: #E0E0E0 !important;
+        font-weight: 500 !important; letter-spacing: 0.3px !important;
+        transition: all 0.3s ease !important; padding: 0.6rem 1.2rem !important;
     }
     .stButton > button:hover {
         border-color: rgba(255,255,255,0.2) !important;
         box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
         transform: translateY(-1px);
     }
-    .stButton > button:active {
-        transform: translateY(0);
-    }
-
-    /* プライマリボタン（スクリーニング実行） */
     button[kind="primary"] {
         background: linear-gradient(135deg, #D4AF37, #C5A028) !important;
-        color: #0A0B0F !important;
-        font-weight: 600 !important;
-        border: none !important;
+        color: #0A0B0F !important; font-weight: 600 !important; border: none !important;
     }
-
-    /* スクロールバー */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
@@ -176,6 +137,46 @@ def get_sp500_list():
         return ['AAPL','MSFT','AMZN','NVDA','GOOGL','META','TSLA','AVGO','COST','NFLX',
                 'AMD','ADBE','CRM','QCOM','TXN','INTU','AMAT','MU','ADI','LRCX',
                 'INTC','PYPL','BKNG','ISRG','REGN','VRTX','GILD','AMGN','PANW','SNPS']
+
+@st.cache_data(ttl=86400)
+def get_nasdaq100_list():
+    return ['AAPL','MSFT','AMZN','NVDA','GOOGL','META','TSLA','AVGO','COST','NFLX',
+            'AMD','ADBE','CRM','QCOM','TXN','INTU','AMAT','MU','ADI','LRCX',
+            'INTC','PYPL','BKNG','ISRG','REGN','VRTX','GILD','AMGN','PANW','SNPS',
+            'CDNS','KLAC','ASML','MELI','CSX','MAR','ORLY','CTAS','DXCM','ROST',
+            'ODFL','IDXX','MNST','KDP','PAYX','PCAR','WDAY','ADSK','TEAM','CRWD',
+            'MRVL','DDOG','ZS','FTNT','MDB','SPLK']
+
+@st.cache_data(ttl=86400)
+def get_all_us_stocks():
+    """
+    GitHub上の全米国株リストを取得し、ETF・優先証券等を簡易除外する
+    リスト提供: https://github.com/rreichel3/US-Stock-Symbols
+    """
+    try:
+        url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/all/all_tickers.txt"
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        all_tickers = resp.text.strip().split('\n')
+        # フィルタ: ドット(優先株等)を含まない、4文字以上（ETFの多くは3文字以下のため）
+        # ただし有名ETF(SPY,QQQ等)は3文字なので、それらは明示的に除外する
+        etf_exclude_list = {'SPY', 'QQQ', 'IWM', 'DIA', 'XLF', 'XLE', 'XLK', 'XLV', 'XLY', 'XLP',
+                           'XLI', 'XLB', 'XLU', 'XLC', 'XME', 'XRT', 'XHB', 'XOP', 'XBI', 'XSD'}
+        filtered = []
+        for t in all_tickers:
+            t = t.strip().upper()
+            if not t: continue
+            if '.' in t: continue          # 優先株等
+            if len(t) < 4:                 # 3文字以下のシンボル
+                if t in etf_exclude_list:  # 有名ETFだけ除去
+                    continue
+                # それ以外の3文字は個別株の可能性があるので残す（ただしETFも多いので注意）
+                # ここでは全て許可（後で API の quoteType で厳密に除外する方が正確だが時間がかかる）
+            filtered.append(t)
+        return list(dict.fromkeys(filtered))  # 重複除去
+    except Exception as e:
+        st.warning(f"全米リスト取得失敗: {e}。S&P500にフォールバックします。")
+        return get_sp500_list()
 
 @st.cache_data(ttl=3600)
 def get_industry(ticker):
@@ -297,7 +298,6 @@ def check_fund(ticker):
     except: return False,{}
 
 def make_sparkline(df):
-    """スパークライン（簡易チャート）"""
     if len(df)<20: return None
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -308,16 +308,13 @@ def make_sparkline(df):
     fig.update_layout(
         template='plotly_dark', height=80, width=200,
         margin=dict(l=0,r=0,t=0,b=0),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(visible=False, showgrid=False),
-        yaxis=dict(visible=False, showgrid=False),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(visible=False), yaxis=dict(visible=False),
         showlegend=False
     )
     return fig
 
 # ==================== UI ====================
-# ヘッダー
 st.markdown("""
 <div style="display:flex; align-items:center; justify-content:space-between; padding:1rem 0;">
     <div style="display:flex; align-items:center; gap:0.75rem;">
@@ -343,11 +340,10 @@ mode_map = {
     'ERROR': ('⚪ エラー', '#8892A4', 'ERROR')
 }
 mode_emoji, mode_color, mode_label = mode_map.get(mode, mode_map['ERROR'])
-needle_angle = -90 + (score/100)*180  # -90deg=0点, 90deg=100点
+needle_angle = -90 + (score/100)*180
 
 col1, col2, col3 = st.columns([1, 2, 1])
 with col1:
-    # ゲージ
     st.markdown(f"""
     <div class="glass-card" style="text-align:center;">
         <div style="font-size:0.75rem; color:#8892A4; letter-spacing:1px; margin-bottom:0.5rem;">MARKET SCORE</div>
@@ -401,15 +397,38 @@ with col3:
 # サイドバー
 with st.sidebar:
     st.markdown("### ⚙️ SCAN SETTINGS")
-    uo = st.selectbox("UNIVERSE", ["S&P 500 TOP30", "S&P 500 TOP50", "NASDAQ100"], index=0)
-    vt = st.slider("VCP THRESHOLD", 20, 80, 40, 5, format="%d/100")
+    uo = st.selectbox(
+        "UNIVERSE",
+        [
+            "ALL US STOCKS (ex-ETF, ~6000)",
+            "S&P 500 ALL (500)",
+            "S&P 500 + Nasdaq 100 (600)",
+            "NASDAQ 100 (100)",
+            "CUSTOM"
+        ],
+        index=0
+    )
+    vt = st.slider("VCP THRESHOLD", 20, 80, 30, 5, format="%d/100")
     mr = st.slider("MAX RESULTS", 5, 30, 15, 5)
     
-    if uo == "S&P 500 TOP30": universe = get_sp500_list()[:30]
-    elif uo == "S&P 500 TOP50": universe = get_sp500_list()[:50]
-    else: universe = ['AAPL','MSFT','AMZN','NVDA','GOOGL','META','TSLA','AVGO','COST','NFLX',
-                      'AMD','ADBE','CRM','QCOM','TXN','INTU','AMAT','MU','ADI','LRCX',
-                      'INTC','PYPL','BKNG','ISRG','REGN','VRTX','GILD','AMGN','PANW','SNPS']
+    if uo == "ALL US STOCKS (ex-ETF, ~6000)":
+        with st.spinner("全米株リスト取得中..."):
+            universe = get_all_us_stocks()
+        st.info(f"⚡ 全米銘柄数: {len(universe)} (処理に時間がかかります)")
+    elif uo == "S&P 500 ALL (500)":
+        universe = get_sp500_list()
+    elif uo == "S&P 500 + Nasdaq 100 (600)":
+        sp500 = get_sp500_list()
+        nasdaq100 = get_nasdaq100_list()
+        universe = list(dict.fromkeys(sp500 + nasdaq100))
+    elif uo == "NASDAQ 100 (100)":
+        universe = get_nasdaq100_list()
+    else:
+        custom_text = st.text_area(
+            "TICKERS (comma separated)",
+            "AAPL, MSFT, NVDA"
+        )
+        universe = [s.strip().upper() for s in custom_text.split(',') if s.strip()]
     
     st.metric("TOTAL TICKERS", len(universe))
     run_btn = st.button("🚀 RUN SCREENING", use_container_width=True, type="primary")
@@ -418,42 +437,45 @@ with st.sidebar:
 
 # スクリーニング実行
 if run_btn:
-    with st.spinner("SCANNING MARKET..."):
+    with st.spinner(f"SCANNING {len(universe)} TICKERS..."):
         # RS計算
         rs_map = {}
-        for sym in universe:
+        progress_text = st.empty()
+        for i, sym in enumerate(universe):
             try:
                 df = download_data(sym, '2y')
                 if len(df) >= 200:
                     raw = calc_rs(df); _, ind = get_industry(sym)
                     rs_map[sym] = {'raw': raw, 'industry': ind}
             except: pass
+            if (i+1) % 200 == 0:
+                progress_text.text(f"RS計算中... {i+1}/{len(universe)}")
+        
+        progress_text.empty()
 
         df_rs = pd.DataFrame.from_dict(rs_map, orient='index')
-        ic = df_rs['industry'].value_counts()
-        vi = ic[ic >= 2].index
+        if df_rs.empty:
+            st.warning("RSデータが空です。Yahoo Financeの接続を確認してください。")
+            ir_map = {}
+        else:
+            ic = df_rs['industry'].value_counts()
+            vi = ic[ic >= 2].index
+            df_rs = df_rs.reset_index().rename(columns={'index': 'ticker'})
+            df_rs['irs'] = 0.0
+            df_rs['raw'] = pd.to_numeric(df_rs['raw'], errors='coerce').fillna(0)
 
-        # 修正：NaN を除外し、インデックスリセットして安全に計算
-        df_rs = df_rs.reset_index().rename(columns={'index': 'ticker'})
-        df_rs['irs'] = 0.0
+            for ind in vi:
+                ind_mask = df_rs['industry'] == ind
+                valid_mask = ind_mask & (df_rs['raw'] != 0)
+                if valid_mask.sum() > 1:
+                    df_rs.loc[valid_mask, 'irs'] = df_rs.loc[valid_mask, 'raw'].rank(pct=True) * 100
 
-        # 念のため raw 列を数値化し、NaN を 0 に置換
-        df_rs['raw'] = pd.to_numeric(df_rs['raw'], errors='coerce').fillna(0)
-
-        for ind in vi:
-            ind_mask = df_rs['industry'] == ind
-            # 業種内に有効な値が2つ以上ある場合のみランク計算
-            valid_mask = ind_mask & (df_rs['raw'] != 0)
-            if valid_mask.sum() > 1:
-                df_rs.loc[valid_mask, 'irs'] = df_rs.loc[valid_mask, 'raw'].rank(pct=True) * 100
-
-        # 元の ticker をインデックスに戻す
-        df_rs = df_rs.set_index('ticker')
-        ir_map = df_rs['irs'].to_dict()
+            df_rs = df_rs.set_index('ticker')
+            ir_map = df_rs['irs'].to_dict()
 
         # スクリーニング
         results = []
-        for sym in universe:
+        for sym in rs_map.keys():  # RSが計算できた銘柄だけ対象
             r = {'ticker': sym, 'passed': False, 'df': None, 'vcp_score': 0, 'vcp_status': 'NONE',
                  'irs': 0, 'rs_raw': 0, 'vcp': {}, 'fund': {}}
             try:
@@ -501,7 +523,6 @@ if 'results' in st.session_state and st.session_state['results']:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # スパークライン
                 spark = make_sparkline(r.get('df'))
                 if spark: st.plotly_chart(spark, use_container_width=True)
             
@@ -539,7 +560,6 @@ if 'results' in st.session_state and st.session_state['results']:
                 st.metric('EPS GROWTH', eps)
                 st.metric('REV GROWTH', rev)
             
-            # 展開チャート
             with st.expander(f"📈 {r['ticker']} DETAILED CHART"):
                 df = r.get('df')
                 if df is not None and len(df) > 50:
@@ -562,7 +582,6 @@ if 'results' in st.session_state and st.session_state['results']:
                                                     mode='lines', name=f'{name}SMA',
                                                     line=dict(color=color, width=1.2)), row=1, col=1)
                     
-                    # 出来高
                     colors = ['#00E676' if df['Close'].iloc[i] >= df['Open'].iloc[i] else '#FF1744' 
                              for i in range(len(df)-90, len(df))]
                     fig.add_trace(go.Bar(x=df.index[-90:], y=df['Volume'].iloc[-90:],
@@ -586,21 +605,19 @@ if 'results' in st.session_state and st.session_state['results']:
 
 elif run_btn:
     st.markdown("---")
-    with st.container():
-        st.markdown("""
-        <div class="glass-card" style="text-align:center; padding:3rem;">
-            <div style="font-size:3rem;">🔍</div>
-            <div style="font-size:1.2rem; font-weight:500; color:#8892A4; margin:1rem 0;">NO TICKERS FOUND</div>
-            <div style="font-size:0.85rem; color:#4A5568;">条件を満たす銘柄はありません。相場の改善を待ちましょう。</div>
-            <div style="font-size:0.75rem; color:#2D3143; margin-top:0.5rem; font-style:italic;">"Discipline is the bridge between goals and accomplishment."</div>
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown("""
+    <div class="glass-card" style="text-align:center; padding:3rem;">
+        <div style="font-size:3rem;">🔍</div>
+        <div style="font-size:1.2rem; font-weight:500; color:#8892A4; margin:1rem 0;">NO TICKERS FOUND</div>
+        <div style="font-size:0.85rem; color:#4A5568;">条件を満たす銘柄はありません。相場の改善を待ちましょう。</div>
+        <div style="font-size:0.75rem; color:#2D3143; margin-top:0.5rem; font-style:italic;">"Discipline is the bridge between goals and accomplishment."</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# フッター
 st.markdown("---")
 st.markdown("""
 <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.7rem; color:#2D3143;">
-    <span>SEPA Screener v2.0 — Mark Minervini Methodology</span>
+    <span>SEPA Screener v2.1 — Mark Minervini Methodology | Universe: All US Stocks</span>
     <span>Data: Yahoo Finance | Not Financial Advice</span>
 </div>
 """, unsafe_allow_html=True)
