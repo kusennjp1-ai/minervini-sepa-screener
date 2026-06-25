@@ -1,5 +1,6 @@
 """
-Mark Minervini SEPA Screener - 完全無料版
+Mark Minervini SEPA Screener — Professional Trading Dashboard
+一流デザイナー版: Glassmorphism UI + Market 360 Gauge + VCP Sparklines
 """
 import streamlit as st
 import pandas as pd
@@ -8,16 +9,162 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
+import math
 
-st.set_page_config(page_title="SEPA Screener", page_icon="📈", layout="wide")
+# ==================== ページ設定 ====================
+st.set_page_config(
+    page_title="SEPA Screener | Minervini",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
+# ==================== プロフェッショナルCSS ====================
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+    * { font-family: 'Inter', sans-serif; }
+    .stApp { background: #0A0B0F; }
+
+    /* ガラスモーフィズムカード */
+    .glass-card {
+        background: rgba(20, 22, 30, 0.8);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 16px;
+        padding: 1.25rem;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        transition: all 0.3s ease;
+    }
+    .glass-card:hover {
+        border-color: rgba(255,255,255,0.12);
+        box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    }
+
+    /* Market 360 ゲージ */
+    .gauge-container {
+        position: relative;
+        width: 200px;
+        height: 100px;
+        margin: 0 auto;
+        overflow: hidden;
+    }
+    .gauge-bg {
+        width: 200px;
+        height: 100px;
+        border-radius: 100px 100px 0 0;
+        background: conic-gradient(from 180deg, #00C853 0deg, #FFD600 90deg, #FF1744 180deg);
+        mask: radial-gradient(circle at 50% 100%, transparent 60%, black 61%);
+        -webkit-mask: radial-gradient(circle at 50% 100%, transparent 60%, black 61%);
+    }
+    .gauge-needle {
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        width: 3px;
+        height: 45px;
+        background: white;
+        transform-origin: bottom center;
+        border-radius: 2px;
+        box-shadow: 0 0 10px rgba(255,255,255,0.5);
+        transition: transform 1s ease;
+    }
+    .gauge-score {
+        position: absolute;
+        bottom: -8px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 2rem;
+        font-weight: 700;
+        color: white;
+        text-shadow: 0 0 20px rgba(255,255,255,0.3);
+    }
+
+    /* 銘柄カード */
+    .ticker-badge {
+        display: inline-block;
+        padding: 0.3rem 0.8rem;
+        background: rgba(255,255,255,0.05);
+        border-radius: 8px;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        font-size: 1.1rem;
+    }
+    .vcp-meter {
+        height: 4px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 2px;
+        overflow: hidden;
+        margin: 0.5rem 0;
+    }
+    .vcp-fill {
+        height: 100%;
+        border-radius: 2px;
+        transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .metric-pill {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        letter-spacing: 0.3px;
+    }
+    .pill-success { background: rgba(0,200,83,0.12); color: #00E676; }
+    .pill-warning { background: rgba(255,214,0,0.12); color: #FFD600; }
+    .pill-danger { background: rgba(255,23,68,0.12); color: #FF1744; }
+    .pill-neutral { background: rgba(255,255,255,0.06); color: #8892A4; }
+
+    /* サイドバー */
+    [data-testid="stSidebar"] {
+        background: rgba(10,11,15,0.95);
+        border-right: 1px solid rgba(255,255,255,0.04);
+        backdrop-filter: blur(20px);
+    }
+
+    /* ボタン */
+    .stButton > button {
+        background: linear-gradient(135deg, #1A1F2E, #252B3D) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 10px !important;
+        color: #E0E0E0 !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.3px !important;
+        transition: all 0.3s ease !important;
+        padding: 0.6rem 1.2rem !important;
+    }
+    .stButton > button:hover {
+        border-color: rgba(255,255,255,0.2) !important;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+        transform: translateY(-1px);
+    }
+    .stButton > button:active {
+        transform: translateY(0);
+    }
+
+    /* プライマリボタン（スクリーニング実行） */
+    button[kind="primary"] {
+        background: linear-gradient(135deg, #D4AF37, #C5A028) !important;
+        color: #0A0B0F !important;
+        font-weight: 600 !important;
+        border: none !important;
+    }
+
+    /* スクロールバー */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+</style>
+""", unsafe_allow_html=True)
+
+# ==================== キャッシュ ====================
 @st.cache_data(ttl=3600)
 def download_data(ticker, period='2y'):
     try:
-        df = yf.download(ticker, period=period, progress=False)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        return df
+        return yf.download(ticker, period=period, progress=False)
     except:
         return pd.DataFrame()
 
@@ -29,7 +176,7 @@ def get_sp500_list():
     except:
         return ['AAPL','MSFT','AMZN','NVDA','GOOGL','META','TSLA','AVGO','COST','NFLX',
                 'AMD','ADBE','CRM','QCOM','TXN','INTU','AMAT','MU','ADI','LRCX',
-                'INTC','PYPL','BKNG','ISRG','REGN','VRTX','GILD','AMGN','PANW']
+                'INTC','PYPL','BKNG','ISRG','REGN','VRTX','GILD','AMGN','PANW','SNPS']
 
 @st.cache_data(ttl=3600)
 def get_industry(ticker):
@@ -39,14 +186,11 @@ def get_industry(ticker):
     except:
         return 'Unknown','Unknown'
 
+# ==================== ロジック ====================
 def evaluate_market_360():
     try:
         sp500 = yf.download('^GSPC', period='1y', progress=False)
         vix = yf.download('^VIX', period='1mo', progress=False)
-        if isinstance(sp500.columns, pd.MultiIndex):
-            sp500.columns = sp500.columns.get_level_values(0)
-        if isinstance(vix.columns, pd.MultiIndex):
-            vix.columns = vix.columns.get_level_values(0)
         if sp500.empty: return 'UPTREND_UNDER_PRESSURE', 55, {}
         details, score = {}, 0
         sp500['SMA50'] = sp500['Close'].rolling(50).mean()
@@ -54,26 +198,27 @@ def evaluate_market_360():
         sp500['SMA200'] = sp500['Close'].rolling(200).mean()
         latest = sp500.iloc[-1]
         if (latest['Close'] > latest['SMA50'] > latest['SMA150'] > latest['SMA200']).all():
-            score += 25; details['トレンド'] = '完全強気'
+            score += 25; details['trend'] = 'FULL_BULL'
         elif latest['Close'] > latest['SMA200']:
-            score += 15; details['トレンド'] = '長期線上'
+            score += 15; details['trend'] = 'BULL'
         else:
-            details['トレンド'] = '弱気'
+            details['trend'] = 'BEAR'
         sma50_up = sp500['SMA50'].diff(5).iloc[-1] > 0 if len(sp500)>5 else False
         sma150_up = sp500['SMA150'].diff(5).iloc[-1] > 0 if len(sp500)>150 else False
         sma200_up = sp500['SMA200'].diff(5).iloc[-1] > 0 if len(sp500)>200 else False
         if sma50_up and sma150_up: score += 10
         if sma200_up: score += 5
-        details['MA'] = f'50:{sma50_up} 150:{sma150_up} 200:{sma200_up}'
         if not vix.empty:
-            v = vix['Close'].iloc[-1]; details['VIX'] = f'{v:.1f}'
+            v = vix['Close'].iloc[-1]; details['vix'] = f'{v:.1f}'
             score += 10 if v<20 else (5 if v<30 else -5)
         h52 = sp500['High'].rolling(252).max().iloc[-1]
         if not pd.isna(h52):
-            dd = latest['Close']/h52; details['高値距離'] = f'{dd*100:.1f}%'
+            dd = latest['Close']/h52; details['drawdown'] = f'{dd*100:.1f}%'
             score += 10 if dd>0.9 else (5 if dd>0.8 else 0)
         score = max(0,min(100,score))
-        mode = 'CONFIRMED_UPTREND 🟢' if score>=70 else ('UPTREND_UNDER_PRESSURE 🟡' if score>=50 else 'MARKET_IN_CORRECTION 🔴')
+        if score >= 70: mode = 'CONFIRMED_UPTREND'
+        elif score >= 50: mode = 'UPTREND_UNDER_PRESSURE'
+        else: mode = 'MARKET_IN_CORRECTION'
         return mode, score, details
     except Exception as e:
         return 'ERROR', 0, {'error':str(e)}
@@ -105,7 +250,7 @@ def check_tt(df):
     return True, calc_rs(df)
 
 def detect_vcp(df):
-    if len(df)<60: return {'score':0,'status':'データ不足','contractions':0,'vol_dry':False,'tight':False,'pivot_dist':0}
+    if len(df)<60: return {'score':0,'status':'DATA_ERR','contractions':0,'vol_dry':False,'tight':False,'pivot_dist':0}
     swings=[]; ct='H'; cp=df.iloc[0]['High']
     for i in range(1,len(df)):
         row=df.iloc[i]
@@ -115,7 +260,7 @@ def detect_vcp(df):
         else:
             if row['Low']<cp: cp=row['Low']
             elif row['High']>cp*1.05: swings.append({'t':'L','p':cp}); ct='H'; cp=row['High']
-    if len(swings)<4: return {'score':0,'status':'スイング不足','contractions':0,'vol_dry':False,'tight':False,'pivot_dist':0}
+    if len(swings)<4: return {'score':0,'status':'SWINGS_LOW','contractions':0,'vol_dry':False,'tight':False,'pivot_dist':0}
     declines=[]
     for i in range(len(swings)-1):
         if swings[i]['t']=='H' and swings[i+1]['t']=='L':
@@ -131,8 +276,11 @@ def detect_vcp(df):
     pivot=hs[-1]['p'] if hs else df['Close'].iloc[-1]
     pd=(pivot-df['Close'].iloc[-1])/pivot*100
     score=min(cc,3)*20 + (20 if vd else 0) + (15 if tight else 0) + (10 if 0<=pd<=5 else 0)
-    stt='✅ VCP成立' if score>=70 else ('🟡 VCP形成中' if score>=50 else ('🔸 収縮進行中' if score>=30 else '❌ 未成立'))
-    return {'score':score,'status':stt,'contractions':cc,'vol_dry':vd,'tight':tight,'pivot_dist':pd}
+    if score>=70: status='VCP_READY'
+    elif score>=50: status='VCP_FORMING'
+    elif score>=30: status='VCP_EARLY'
+    else: status='NONE'
+    return {'score':score,'status':status,'contractions':cc,'vol_dry':vd,'tight':tight,'pivot_dist':pd}
 
 def check_fund(ticker):
     try:
@@ -142,107 +290,304 @@ def check_fund(ticker):
         for k in ['Diluted EPS','Basic EPS']:
             if k in q.index and len(q.loc[k])>=8:
                 e=q.loc[k]; g=(e.iloc[0]-e.iloc[4])/abs(e.iloc[4])*100 if e.iloc[4]!=0 else 0
-                info['EPS成長']=f'{g:.1f}%'; info['EPS_OK']=g>=20; break
+                info['eps_growth']=f'{g:.1f}%'; info['eps_ok']=g>=20; break
         if 'Total Revenue' in q.index and len(q.loc['Total Revenue'])>=8:
             r=q.loc['Total Revenue']; g=(r.iloc[0]-r.iloc[4])/abs(r.iloc[4])*100 if r.iloc[4]!=0 else 0
-            info['売上成長']=f'{g:.1f}%'; info['売上_OK']=g>=15
-        return (info.get('EPS_OK',False) or info.get('売上_OK',False)), info
+            info['rev_growth']=f'{g:.1f}%'; info['rev_ok']=g>=15
+        return (info.get('eps_ok',False) or info.get('rev_ok',False)), info
     except: return False,{}
 
-# UI
-st.markdown("# 📈 Mark Minervini SEPA Screener")
-st.markdown("##### Market 360 × Trend Template × VCP")
-st.markdown("---")
+def make_sparkline(df):
+    """スパークライン（簡易チャート）"""
+    if len(df)<20: return None
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df.index[-30:], y=df['Close'].iloc[-30:],
+        mode='lines', line=dict(color='#4A5568', width=1.2),
+        fill='tozeroy', fillcolor='rgba(74,85,104,0.1)'
+    ))
+    fig.update_layout(
+        template='plotly_dark', height=80, width=200,
+        margin=dict(l=0,r=0,t=0,b=0),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        xaxis=dict(visible=False, showgrid=False),
+        yaxis=dict(visible=False, showgrid=False),
+        showlegend=False
+    )
+    return fig
 
+# ==================== UI ====================
+# ヘッダー
+st.markdown("""
+<div style="display:flex; align-items:center; justify-content:space-between; padding:1rem 0;">
+    <div style="display:flex; align-items:center; gap:0.75rem;">
+        <span style="font-size:2rem; filter:drop-shadow(0 0 8px rgba(212,175,55,0.4));">🏛️</span>
+        <div>
+            <div style="font-size:1.4rem; font-weight:700; letter-spacing:-0.5px; color:#FFFFFF;">MARKET 360</div>
+            <div style="font-size:0.75rem; color:#8892A4; letter-spacing:1.5px; text-transform:uppercase;">Minervini SEPA Screener</div>
+        </div>
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace; color:#4A5568; font-size:0.85rem;">
+        {now}
+    </div>
+</div>
+""".format(now=datetime.now().strftime('%Y/%m/%d %H:%M:%S EST')), unsafe_allow_html=True)
+
+# Market 360 パネル
 mode, score, details = evaluate_market_360()
-c1,c2,c3=st.columns([2,1,1])
-with c1: st.markdown(f"## {mode}")
-with c2:
-    color='#00C853' if score>=70 else ('#FFD600' if score>=50 else '#FF1744')
-    st.markdown(f'<div style="background:#1E2130;border-radius:12px;padding:1rem;text-align:center;border:1px solid {color};"><div style="font-size:2rem;font-weight:700;color:{color};">{score}/100</div><div style="font-size:0.8rem;color:#8892A4;">Market 360</div></div>',unsafe_allow_html=True)
-with c3:
-    st.markdown(f'<div style="background:#1E2130;border-radius:12px;padding:1rem;text-align:center;"><div style="font-size:1.2rem;color:#E0E0E0;">{details.get("VIX","N/A")}</div><div style="font-size:0.8rem;color:#8892A4;">VIX</div></div>',unsafe_allow_html=True)
 
+mode_map = {
+    'CONFIRMED_UPTREND': ('🟢 攻め', '#00C853', 'CONFIRMED UPTREND'),
+    'UPTREND_UNDER_PRESSURE': ('🟡 慎重', '#FFD600', 'UPTREND UNDER PRESSURE'),
+    'MARKET_IN_CORRECTION': ('🔴 待ち', '#FF1744', 'MARKET IN CORRECTION'),
+    'ERROR': ('⚪ エラー', '#8892A4', 'ERROR')
+}
+mode_emoji, mode_color, mode_label = mode_map.get(mode, mode_map['ERROR'])
+needle_angle = -90 + (score/100)*180  # -90deg=0点, 90deg=100点
+
+col1, col2, col3 = st.columns([1, 2, 1])
+with col1:
+    # ゲージ
+    st.markdown(f"""
+    <div class="glass-card" style="text-align:center;">
+        <div style="font-size:0.75rem; color:#8892A4; letter-spacing:1px; margin-bottom:0.5rem;">MARKET SCORE</div>
+        <div class="gauge-container">
+            <div class="gauge-bg"></div>
+            <div class="gauge-needle" style="transform:rotate({needle_angle}deg);"></div>
+            <div class="gauge-score">{score}</div>
+        </div>
+        <div style="color:{mode_color}; font-weight:600; margin-top:0.5rem;">{mode_emoji} {mode_label}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    c21, c22, c23 = st.columns(3)
+    with c21:
+        st.markdown(f"""
+        <div style="text-align:center;">
+            <div style="font-size:0.65rem; color:#8892A4; letter-spacing:1px;">VIX</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:1.5rem; font-weight:600; color:#E0E0E0;">{details.get('vix','N/A')}</div>
+            <div class="metric-pill {'pill-success' if float(details.get('vix',20)) < 20 else 'pill-warning' if float(details.get('vix',20)) < 30 else 'pill-danger'}">{'LOW' if float(details.get('vix',20))<20 else 'MID' if float(details.get('vix',20))<30 else 'HIGH'}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with c22:
+        st.markdown(f"""
+        <div style="text-align:center;">
+            <div style="font-size:0.65rem; color:#8892A4; letter-spacing:1px;">TREND</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:1.5rem; font-weight:600; color:#E0E0E0;">{details.get('trend','N/A')}</div>
+            <div class="metric-pill {'pill-success' if details.get('trend')=='FULL_BULL' else 'pill-warning' if details.get('trend')=='BULL' else 'pill-danger'}">{details.get('trend','N/A')}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with c23:
+        st.markdown(f"""
+        <div style="text-align:center;">
+            <div style="font-size:0.65rem; color:#8892A4; letter-spacing:1px;">52W DIST</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size:1.5rem; font-weight:600; color:#E0E0E0;">{details.get('drawdown','N/A')}</div>
+            <div class="metric-pill pill-neutral">ATR</div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col3:
+    st.markdown(f"""
+    <div class="glass-card" style="text-align:center;">
+        <div style="font-size:0.75rem; color:#8892A4; letter-spacing:1px;">S&P 500</div>
+        <div style="font-family:'JetBrains Mono',monospace; font-size:2rem; font-weight:700; color:white;">$SPX</div>
+        <div style="color:{mode_color}; margin-top:0.3rem;">{mode_label}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+# サイドバー
 with st.sidebar:
-    st.markdown("## ⚙️ 設定")
-    uo=st.selectbox("ユニバース",["S&P 500 上位30","S&P 500 上位50","Nasdaq 100 上位30"],index=0)
-    vt=st.slider("VCP最低スコア",20,80,40,5)
-    mr=st.slider("最大表示数",5,30,15,5)
-    if uo=="S&P 500 上位30": universe=get_sp500_list()[:30]
-    elif uo=="S&P 500 上位50": universe=get_sp500_list()[:50]
-    else: universe=['AAPL','MSFT','AMZN','NVDA','GOOGL','META','TSLA','AVGO','COST','NFLX','AMD','ADBE','CRM','QCOM','TXN','INTU','AMAT','MU','ADI','LRCX','INTC','PYPL','BKNG','ISRG','REGN','VRTX','GILD','AMGN','PANW','SNPS']
-    st.markdown(f"対象: **{len(universe)}** 銘柄")
-    run_btn=st.button("🚀 スクリーニング実行",use_container_width=True,type="primary")
-    st.markdown("---"); st.caption("完全無料・APIキー不要")
+    st.markdown("### ⚙️ SCAN SETTINGS")
+    uo = st.selectbox("UNIVERSE", ["S&P 500 TOP30", "S&P 500 TOP50", "NASDAQ100"], index=0)
+    vt = st.slider("VCP THRESHOLD", 20, 80, 40, 5, format="%d/100")
+    mr = st.slider("MAX RESULTS", 5, 30, 15, 5)
+    
+    if uo == "S&P 500 TOP30": universe = get_sp500_list()[:30]
+    elif uo == "S&P 500 TOP50": universe = get_sp500_list()[:50]
+    else: universe = ['AAPL','MSFT','AMZN','NVDA','GOOGL','META','TSLA','AVGO','COST','NFLX',
+                      'AMD','ADBE','CRM','QCOM','TXN','INTU','AMAT','MU','ADI','LRCX',
+                      'INTC','PYPL','BKNG','ISRG','REGN','VRTX','GILD','AMGN','PANW','SNPS']
+    
+    st.metric("TOTAL TICKERS", len(universe))
+    run_btn = st.button("🚀 RUN SCREENING", use_container_width=True, type="primary")
+    st.markdown("---")
+    st.caption("© 2026 SEPA Screener\nMinervini Methodology")
 
+# スクリーニング実行
 if run_btn:
-    with st.spinner("🔄 RS計算 + スクリーニング中..."):
-        pb=st.progress(0,text="RS計算中...")
-        rs_map={}
-        for i,sym in enumerate(universe):
+    with st.spinner("SCANNING MARKET..."):
+        # RS計算
+        rs_map = {}
+        for sym in universe:
             try:
-                df=download_data(sym,'2y')
-                if len(df)>=200:
-                    raw=calc_rs(df); _,ind=get_industry(sym)
-                    rs_map[sym]={'raw':raw,'industry':ind}
+                df = download_data(sym, '2y')
+                if len(df) >= 200:
+                    raw = calc_rs(df); _, ind = get_industry(sym)
+                    rs_map[sym] = {'raw': raw, 'industry': ind}
             except: pass
-            if (i+1)%10==0: pb.progress((i+1)/len(universe),text=f"RS計算中... {i+1}/{len(universe)}")
-        df_rs=pd.DataFrame.from_dict(rs_map,orient='index')
-        ic=df_rs['industry'].value_counts(); vi=ic[ic>=2].index
-        df_rs['irs']=0.0; mask=df_rs['industry'].isin(vi)
-        if mask.sum()>0: df_rs.loc[mask,'irs']=df_rs[mask].groupby('industry')['raw'].rank(pct=True)*100
-        ir_map=df_rs['irs'].to_dict()
-        pb.empty()
-        sp=st.progress(0,text="スクリーニング中...")
-        results=[]
-        for i,sym in enumerate(universe):
-            r={'ticker':sym,'passed':False,'tt':False,'rs_raw':0,'irs':0,'vcp_score':0,'vcp_status':'','vcp':{},'fund_ok':False,'fund':{},'df':None}
+        
+        df_rs = pd.DataFrame.from_dict(rs_map, orient='index')
+        ic = df_rs['industry'].value_counts()
+        vi = ic[ic >= 2].index
+        df_rs['irs'] = 0.0
+        mask = df_rs['industry'].isin(vi)
+        if mask.sum() > 0:
+            df_rs.loc[mask, 'irs'] = df_rs[mask].groupby('industry')['raw'].rank(pct=True) * 100
+        ir_map = df_rs['irs'].to_dict()
+        
+        results = []
+        for sym in universe:
+            r = {'ticker': sym, 'passed': False, 'df': None, 'vcp_score': 0, 'vcp_status': 'NONE',
+                 'irs': 0, 'rs_raw': 0, 'vcp': {}, 'fund': {}}
             try:
-                df=download_data(sym,'2y')
-                if df.empty or len(df)<200: continue
-                r['df']=df
-                tt_ok,rs_raw=check_tt(df); r['tt']=tt_ok; r['rs_raw']=rs_raw
+                df = download_data(sym, '2y')
+                if df.empty or len(df) < 200: continue
+                r['df'] = df
+                tt_ok, rs_raw = check_tt(df)
                 if not tt_ok: continue
-                irs=ir_map.get(sym,0); r['irs']=irs
-                if irs<70: continue
-                fok,fi=check_fund(sym); r['fund_ok']=fok; r['fund']=fi
+                r['rs_raw'] = rs_raw
+                irs = ir_map.get(sym, 0); r['irs'] = irs
+                if irs < 70: continue
+                fok, fi = check_fund(sym)
                 if not fok: continue
-                v=detect_vcp(df); r['vcp_score']=v['score']; r['vcp_status']=v['status']; r['vcp']=v
-                if v['score']>=vt: r['passed']=True; results.append(r)
+                r['fund'] = fi
+                v = detect_vcp(df)
+                r['vcp_score'] = v['score']; r['vcp_status'] = v['status']; r['vcp'] = v
+                if v['score'] >= vt: r['passed'] = True; results.append(r)
             except: pass
-            if (i+1)%10==0: sp.progress((i+1)/len(universe),text=f"スクリーニング中... {i+1}/{len(universe)}")
-        sp.empty()
-        results.sort(key=lambda x:x['vcp_score'],reverse=True)
-        st.session_state['results']=results[:mr]
-        st.session_state['mode']=mode
+        
+        results.sort(key=lambda x: x['vcp_score'], reverse=True)
+        st.session_state['results'] = results[:mr]
+        st.session_state['mode'] = mode
 
+# 結果表示
 if 'results' in st.session_state and st.session_state['results']:
     st.markdown("---")
-    if st.session_state.get('mode','').startswith('MARKET_IN_CORRECTION'):
-        st.warning("⚠️ Market in Correction — 参考表示")
-    st.markdown(f"### 🔍 仕掛け候補 ({len(st.session_state['results'])}銘柄)")
-    for i,r in enumerate(st.session_state['results']):
-        c1,c2,c3=st.columns([2,2,1])
-        with c1: st.markdown(f"### {i+1}. {r['ticker']}"); st.markdown(r['vcp_status'])
-        with c2:
-            sc=r['vcp_score']; bc='#00E676' if sc>=70 else ('#FFD600' if sc>=50 else '#FF9100')
-            st.markdown(f'<div style="margin-top:0.5rem;"><div style="display:flex;justify-content:space-between;font-size:0.8rem;color:#8892A4;"><span>VCP</span><span>{sc}/100</span></div><div style="height:6px;border-radius:3px;background:#2D3143;"><div style="height:100%;width:{sc}%;background:{bc};border-radius:3px;"></div></div></div>',unsafe_allow_html=True)
-            v=r['vcp']; cc1,cc2,cc3=st.columns(3)
-            cc1.metric('収縮',v.get('contractions',0)); cc2.metric('Dry','✅' if v.get('vol_dry') else '❌'); cc3.metric('Tight','✅' if v.get('tight') else '❌')
-        with c3: st.metric('業種RS',f"{r['irs']:.0f}"); st.metric('RS生値',f"{r['rs_raw']:.1f}")
-        with st.expander(f"📈 {r['ticker']} チャート"):
-            df=r.get('df')
-            if df is not None and len(df)>50:
-                fig=make_subplots(rows=2,cols=1,shared_xaxes=True,vertical_spacing=0.03,row_heights=[0.7,0.3])
-                fig.add_trace(go.Candlestick(x=df.index[-90:],open=df['Open'].iloc[-90:],high=df['High'].iloc[-90:],low=df['Low'].iloc[-90:],close=df['Close'].iloc[-90:],name='価格',increasing_line_color='#00E676',decreasing_line_color='#FF1744'),row=1,col=1)
-                if 'SMA50' in df.columns: fig.add_trace(go.Scatter(x=df.index[-90:],y=df['SMA50'].iloc[-90:],mode='lines',name='50SMA',line=dict(color='#448AFF',width=1)),row=1,col=1)
-                if 'SMA150' in df.columns: fig.add_trace(go.Scatter(x=df.index[-90:],y=df['SMA150'].iloc[-90:],mode='lines',name='150SMA',line=dict(color='#FFD600',width=1)),row=1,col=1)
-                if 'SMA200' in df.columns: fig.add_trace(go.Scatter(x=df.index[-90:],y=df['SMA200'].iloc[-90:],mode='lines',name='200SMA',line=dict(color='#FF9100',width=1)),row=1,col=1)
-                fig.add_trace(go.Bar(x=df.index[-90:],y=df['Volume'].iloc[-90:],name='出来高',marker_color='#448AFF',opacity=0.4),row=2,col=1)
-                fig.update_layout(template='plotly_dark',height=450,xaxis_rangeslider_visible=False,showlegend=False,margin=dict(l=10,r=10,t=20,b=10))
-                st.plotly_chart(fig,use_container_width=True)
-        st.markdown("---")
-elif run_btn:
-    st.markdown("---"); st.info("🔍 条件に合致する銘柄は見つかりませんでした。"); st.caption("「待つこともトレードの一部。」")
+    if st.session_state['mode'] == 'MARKET_IN_CORRECTION':
+        st.warning("⚠️ MARKET IN CORRECTION — 新規ポジション非推奨")
+    
+    st.markdown(f"### 🏆 SCREENING RESULTS ({len(st.session_state['results'])} TICKERS)")
+    
+    for i, r in enumerate(st.session_state['results']):
+        with st.container():
+            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+            
+            c1, c2, c3, c4 = st.columns([1.5, 2.5, 1.5, 1.5])
+            
+            with c1:
+                st.markdown(f"""
+                <div class="ticker-badge">${r['ticker']}</div>
+                <div style="margin-top:0.5rem;">
+                    <span class="metric-pill {'pill-success' if r['vcp_status']=='VCP_READY' else 'pill-warning' if r['vcp_status']=='VCP_FORMING' else 'pill-neutral'}">
+                        {r['vcp_status'].replace('_',' ')}
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # スパークライン
+                spark = make_sparkline(r.get('df'))
+                if spark: st.plotly_chart(spark, use_container_width=True)
+            
+            with c2:
+                sc = r['vcp_score']
+                bc = '#00E676' if sc >= 70 else '#FFD600' if sc >= 50 else '#FF9100'
+                st.markdown(f"""
+                <div style="margin:0.3rem 0;">
+                    <div style="display:flex; justify-content:space-between; font-size:0.7rem; color:#8892A4;">
+                        <span>VCP SCORE</span><span style="font-family:'JetBrains Mono',monospace; color:{bc};">{sc}/100</span>
+                    </div>
+                    <div class="vcp-meter">
+                        <div class="vcp-fill" style="width:{sc}%; background:{bc};"></div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                v = r['vcp']
+                m1, m2, m3 = st.columns(3)
+                m1.metric('CONTRACTIONS', v.get('contractions', 0))
+                m2.metric('DRY-UP', '✅' if v.get('vol_dry') else '❌')
+                m3.metric('TIGHT', '✅' if v.get('tight') else '❌')
+            
+            with c3:
+                st.markdown(f"""
+                <div style="font-size:0.7rem; color:#8892A4;">INDUSTRY RS</div>
+                <div style="font-family:'JetBrains Mono',monospace; font-size:1.8rem; font-weight:700; color:white;">{r['irs']:.0f}</div>
+                <div style="font-size:0.65rem; color:#4A5568;">RAW RS: {r['rs_raw']:.1f}</div>
+                """, unsafe_allow_html=True)
+            
+            with c4:
+                fi = r['fund']
+                eps = fi.get('eps_growth', 'N/A')
+                rev = fi.get('rev_growth', 'N/A')
+                st.metric('EPS GROWTH', eps)
+                st.metric('REV GROWTH', rev)
+            
+            # 展開チャート
+            with st.expander(f"📈 {r['ticker']} DETAILED CHART"):
+                df = r.get('df')
+                if df is not None and len(df) > 50:
+                    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                       vertical_spacing=0.03, row_heights=[0.7, 0.3])
+                    
+                    fig.add_trace(
+                        go.Candlestick(
+                            x=df.index[-90:], open=df['Open'].iloc[-90:],
+                            high=df['High'].iloc[-90:], low=df['Low'].iloc[-90:],
+                            close=df['Close'].iloc[-90:], name='',
+                            increasing_line_color='#00E676', decreasing_line_color='#FF1744',
+                            increasing_fillcolor='rgba(0,230,118,0.1)', decreasing_fillcolor='rgba(255,23,68,0.1)'
+                        ), row=1, col=1
+                    )
+                    
+                    for ma, color, name in [('SMA50', '#448AFF', '50'), ('SMA150', '#FFD600', '150'), ('SMA200', '#FF9100', '200')]:
+                        if ma in df.columns:
+                            fig.add_trace(go.Scatter(x=df.index[-90:], y=df[ma].iloc[-90:],
+                                                    mode='lines', name=f'{name}SMA',
+                                                    line=dict(color=color, width=1.2)), row=1, col=1)
+                    
+                    # 出来高
+                    colors = ['#00E676' if df['Close'].iloc[i] >= df['Open'].iloc[i] else '#FF1744' 
+                             for i in range(len(df)-90, len(df))]
+                    fig.add_trace(go.Bar(x=df.index[-90:], y=df['Volume'].iloc[-90:],
+                                        name='', marker_color=colors, opacity=0.3), row=2, col=1)
+                    
+                    fig.update_layout(
+                        template='plotly_dark',
+                        height=450,
+                        xaxis_rangeslider_visible=False,
+                        showlegend=False,
+                        margin=dict(l=10, r=10, t=20, b=10),
+                        paper_bgcolor='rgba(10,11,15,1)',
+                        plot_bgcolor='rgba(10,11,15,1)',
+                        yaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                        yaxis2=dict(gridcolor='rgba(255,255,255,0.05)')
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown("---"); st.caption("免責事項: 投資判断は自己責任で。データ: Yahoo Finance")
+elif run_btn:
+    st.markdown("---")
+    with st.container():
+        st.markdown("""
+        <div class="glass-card" style="text-align:center; padding:3rem;">
+            <div style="font-size:3rem;">🔍</div>
+            <div style="font-size:1.2rem; font-weight:500; color:#8892A4; margin:1rem 0;">NO TICKERS FOUND</div>
+            <div style="font-size:0.85rem; color:#4A5568;">条件を満たす銘柄はありません。相場の改善を待ちましょう。</div>
+            <div style="font-size:0.75rem; color:#2D3143; margin-top:0.5rem; font-style:italic;">"Discipline is the bridge between goals and accomplishment."</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+# フッター
+st.markdown("---")
+st.markdown("""
+<div style="display:flex; justify-content:space-between; align-items:center; font-size:0.7rem; color:#2D3143;">
+    <span>SEPA Screener v2.0 — Mark Minervini Methodology</span>
+    <span>Data: Yahoo Finance | Not Financial Advice</span>
+</div>
+""", unsafe_allow_html=True)
