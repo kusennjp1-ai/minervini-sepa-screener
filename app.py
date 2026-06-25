@@ -9,7 +9,6 @@ import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
-import math
 
 # ==================== ページ設定 ====================
 st.set_page_config(
@@ -429,16 +428,26 @@ if run_btn:
                     raw = calc_rs(df); _, ind = get_industry(sym)
                     rs_map[sym] = {'raw': raw, 'industry': ind}
             except: pass
-        
+
         df_rs = pd.DataFrame.from_dict(rs_map, orient='index')
         ic = df_rs['industry'].value_counts()
         vi = ic[ic >= 2].index
+
+        # 修正：インデックスをリセットして安全に計算
+        df_rs = df_rs.reset_index().rename(columns={'index': 'ticker'})
         df_rs['irs'] = 0.0
-        mask = df_rs['industry'].isin(vi)
-        if mask.sum() > 0:
-            df_rs.loc[mask, 'irs'] = df_rs[mask].groupby('industry')['raw'].rank(pct=True) * 100
+
+        for ind in vi:
+            ind_mask = df_rs['industry'] == ind
+            if ind_mask.sum() > 1:
+                # 業種内で rank(pct=True) を計算
+                df_rs.loc[ind_mask, 'irs'] = df_rs.loc[ind_mask, 'raw'].rank(pct=True) * 100
+
+        # 元の ticker をインデックスに戻す
+        df_rs = df_rs.set_index('ticker')
         ir_map = df_rs['irs'].to_dict()
-        
+
+        # スクリーニング
         results = []
         for sym in universe:
             r = {'ticker': sym, 'passed': False, 'df': None, 'vcp_score': 0, 'vcp_status': 'NONE',
