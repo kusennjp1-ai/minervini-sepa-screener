@@ -433,15 +433,19 @@ if run_btn:
         ic = df_rs['industry'].value_counts()
         vi = ic[ic >= 2].index
 
-        # 修正：インデックスをリセットして安全に計算
+        # 修正：NaN を除外し、インデックスリセットして安全に計算
         df_rs = df_rs.reset_index().rename(columns={'index': 'ticker'})
         df_rs['irs'] = 0.0
 
+        # 念のため raw 列を数値化し、NaN を 0 に置換
+        df_rs['raw'] = pd.to_numeric(df_rs['raw'], errors='coerce').fillna(0)
+
         for ind in vi:
             ind_mask = df_rs['industry'] == ind
-            if ind_mask.sum() > 1:
-                # 業種内で rank(pct=True) を計算
-                df_rs.loc[ind_mask, 'irs'] = df_rs.loc[ind_mask, 'raw'].rank(pct=True) * 100
+            # 業種内に有効な値が2つ以上ある場合のみランク計算
+            valid_mask = ind_mask & (df_rs['raw'] != 0)
+            if valid_mask.sum() > 1:
+                df_rs.loc[valid_mask, 'irs'] = df_rs.loc[valid_mask, 'raw'].rank(pct=True) * 100
 
         # 元の ticker をインデックスに戻す
         df_rs = df_rs.set_index('ticker')
